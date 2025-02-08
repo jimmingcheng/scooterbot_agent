@@ -1,0 +1,23 @@
+[project]
+name = "scooterbot-agent"
+version = "1.0.1"
+description = ""
+authors = [
+    {name = "Jimming Cheng",email = "jimming@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai (>=1.59.6,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^7.1.1"
+wheel = "^0.45.1"
+twine = "^6.1.0"
+
