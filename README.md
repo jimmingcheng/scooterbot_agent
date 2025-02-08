@@ -4,6 +4,10 @@ Scooterbot Agent
 
 ## Versions
 
+### 1.0.5
+
+- relax tenacity dependency
+
 ### 1.0.4
 
 - add tenacity dependency since it's not in python 3.9 stdlib
