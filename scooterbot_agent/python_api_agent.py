@@ -2,22 +2,52 @@ from abc import ABC
 from abc import abstractmethod
 import datetime
 import inspect
-import json
 import textwrap
-from openai import OpenAI
+from agents import Agent as OpenAIAgent
+from agents import Runner
+from pydantic import BaseModel
 from tenacity import retry
 from tenacity import stop_after_attempt
 from typing import get_type_hints
+from typing import Union
 
 
 from .private_agent import PrivateAgent
 
 
+class FinalAnswer(BaseModel, ABC):
+    pass
+
+
+class FinalTextAnswer(FinalAnswer):
+    answer: str
+
+
+class APIExecutionPlan(BaseModel):
+    pass
+
+
 class PythonAPIAgent(PrivateAgent, ABC):
     """Base class for agents that interact with python APIs."""
 
-    def reply(self, message: str) -> str:
-        return self.answer_with_api(message)
+    execution_plan_cls: type[APIExecutionPlan]
+    final_answer_cls: type[FinalAnswer]
+    model: str
+
+    def __init__(
+        self,
+        user_id: str,
+        execution_plan_cls: type[APIExecutionPlan],
+        final_answer_cls: type[FinalAnswer] = FinalTextAnswer,
+        model: str = 'gpt-4.1',
+    ) -> None:
+        super().__init__(user_id=user_id)
+        self.execution_plan_cls = execution_plan_cls
+        self.final_answer_cls = final_answer_cls
+        self.model = model
+
+    async def reply(self, message: str) -> FinalAnswer:
+        return await self.answer_with_api(message)
 
     @abstractmethod
     def overview(cls) -> str:
@@ -30,12 +60,8 @@ class PythonAPIAgent(PrivateAgent, ABC):
         the LLM to call the `invoke_api` tool"""
 
     @abstractmethod
-    def invoke_api(self, **args) -> str:
+    def invoke_api(self, execution_plan: APIExecutionPlan) -> str:
         """Implements the `invoke_api` tool."""
-
-    @abstractmethod
-    def tool_spec_for_invoke_api(self) -> dict:
-        """OpenAI tool spec for the `invoke_api` tool."""
 
     @classmethod
     def format_prior_state(cls, state: str) -> str:
@@ -53,7 +79,7 @@ class PythonAPIAgent(PrivateAgent, ABC):
         return ''
 
     @retry(stop=stop_after_attempt(3))
-    def answer_with_api(
+    async def answer_with_api(
         self,
         request: str,
         prior_states: str | None = None,
@@ -63,82 +89,63 @@ class PythonAPIAgent(PrivateAgent, ABC):
         if not prior_states:
             prior_states = self.format_prior_state(self.initial_state())
 
-        system_prompt = textwrap.dedent(
-            '''\
-            # Instructions
+        planner = OpenAIAgent(
+            name='PythonAPIAgent',
+            model=self.model,
+            instructions=textwrap.dedent(
+                '''\
+                # Instructions
 
-            You are given `request` and `prior_states`.
+                You are given `request` and `prior_states`.
 
-            1. As soon as `prior_states` is sufficient to answer request, create and return `answer` (plain English)
-            2. Else, call `invoke_api` to fetch more data, so the process can be repeated with the additional data
+                1. As soon as `prior_states` is sufficient to answer request, return a `{final_answer_cls}` object
+                2. Else, return an `{execution_plan_cls}` object, so the process can be repeated with the additional data
 
-            # API Usage Guide
+                # API Usage Guide
 
-            {usage_guide}
-            '''
-        ).format(
-            usage_guide=self.usage_guide()
+                {usage_guide}
+                '''
+            ).format(
+                final_answer_cls=self.final_answer_cls.__name__,
+                execution_plan_cls=self.execution_plan_cls.__name__,
+                usage_guide=self.usage_guide()
+            ),
+            output_type=Union[self.execution_plan_cls, self.final_answer_cls],
         )
 
-        user_prompt = textwrap.dedent(
-            '''\
-            # Request
+        result = await Runner().run(
+            planner,
+            textwrap.dedent(
+                '''\
+                # Request
 
-            {request}
+                {request}
 
-            # Prior States
+                # Prior States
 
-            {prior_states}
-            '''
-        ).format(
-            request=request,
-            prior_states=prior_states,
+                {prior_states}
+                '''
+            ).format(
+                request=request,
+                prior_states=prior_states,
+            ),
         )
 
-        completion_message = OpenAI().chat.completions.create(
-            messages=[
-                {'role': 'user', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
-            model='gpt-4o',
-            tools=[
-                self.tool_spec_for_invoke_api(),  # type: ignore
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "answer",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "answer": {"type": "string"},
-                            },
-                            "required": ["answer"],
-                        }
-                    }
-                }
-            ],
-            tool_choice='required',
-        ).choices[0].message
+        if isinstance(result.final_output, FinalAnswer):
+            return result.final_output.answer
+        elif isinstance(result.final_output, APIExecutionPlan):
+            self.invoke_api(result.final_output)
+            return result.final_output.answer
 
-        if completion_message.tool_calls:
-            assert completion_message.tool_calls
-
-            tool_call = completion_message.tool_calls[0]
-
-            func_args = json.loads(tool_call.function.arguments)
-            if tool_call.function.name == 'invoke_api':
-                new_state = self.invoke_api(**func_args)
-                prior_states += '\n\n' + self.format_prior_state(new_state)
-                if depth < max_depth:
-                    return self.answer_with_api(request, prior_states, depth + 1, max_depth)
-                else:
-                    return "Sorry, I ran out of steps"
-            elif tool_call.function.name == 'answer':
-                return func_args['answer']
-            raise ValueError('Unexpected tool call')
-        else:
-            assert completion_message.content
-            return completion_message.content
+        if isinstance(result.final_output, self.final_answer_cls):
+            return result.final_output.answer
+        if isinstance(result.final_output, self.execution_plan_cls):
+            new_state = self.invoke_api(result.final_output)
+            prior_states += '\n\n' + self.format_prior_state(new_state)
+            if depth < max_depth:
+                return await self.answer_with_api(request, prior_states, depth + 1, max_depth)
+            else:
+                return "Sorry, I ran out of steps"
 
 
 def generate_python_api_doc(cls: type, whitelisted_members: list[str] | None = None) -> str:

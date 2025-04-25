@@ -4,6 +4,11 @@ Scooterbot Agent
 
 ## Versions
 
+### 2.0.0
+
+- openai-agents
+- async replies
+
 ### 1.0.5
 
 - relax tenacity dependency
