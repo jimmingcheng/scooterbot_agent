@@ -2,7 +2,9 @@ from abc import ABC
 from abc import abstractmethod
 import datetime
 import inspect
+import logging
 import textwrap
+from typing import Any
 from agents import Agent as OpenAIAgent
 from agents import Runner
 from pydantic import BaseModel
@@ -27,6 +29,10 @@ class APIExecutionPlan(BaseModel):
     pass
 
 
+class PythonFunctionExecutionPlan(APIExecutionPlan):
+    function_definition: str
+
+
 class PythonAPIAgent(PrivateAgent, ABC):
     """Base class for agents that interact with python APIs."""
 
@@ -37,9 +43,9 @@ class PythonAPIAgent(PrivateAgent, ABC):
     def __init__(
         self,
         user_id: str,
-        execution_plan_cls: type[APIExecutionPlan],
+        execution_plan_cls: type[APIExecutionPlan] = PythonFunctionExecutionPlan,
         final_answer_cls: type[FinalAnswer] = FinalTextAnswer,
-        model: str = 'gpt-4.1',
+        model: str = 'gpt-4.1-mini',
     ) -> None:
         super().__init__(user_id=user_id)
         self.execution_plan_cls = execution_plan_cls
@@ -59,9 +65,41 @@ class PythonAPIAgent(PrivateAgent, ABC):
         """Detailed description of the API's capabilities and how to invoke them. Should instruct
         the LLM to call the `invoke_api` tool"""
 
-    @abstractmethod
-    def invoke_api(self, execution_plan: APIExecutionPlan) -> str:
-        """Implements the `invoke_api` tool."""
+    async def invoke_api(self, execution_plan: APIExecutionPlan) -> str:
+        if isinstance(execution_plan, PythonFunctionExecutionPlan):
+            return await self.invoke_python_function(execution_plan)
+        else:
+            raise NotImplementedError(
+                f'Execution plan type {type(execution_plan)} not supported'
+            )
+
+    async def invoke_python_function(self, execution_plan: PythonFunctionExecutionPlan) -> str:
+        func_def = execution_plan.function_definition
+
+        exec_locals = {}
+
+        # Extract the function definition
+        exec(func_def, {'__builtins__': None}, exec_locals)
+
+        func_name = func_def.split('(')[0].split('def ')[1]
+
+        func = exec_locals[func_name]
+        args, kwargs = self.python_func_args_and_kwargs()
+
+        if inspect.iscoroutinefunction(func):
+            retval = await func(*args, **kwargs)
+        else:
+            retval = func(*args, **kwargs)
+
+        logging.info('---- START EXECUTING CODE ----')
+        logging.info(func_def)
+        logging.info(f'{func_name}(...) -> {retval}')
+        logging.info('---- END EXECUTING CODE ----')
+
+        return f'{func_name}(...) -> {retval}'
+
+    def python_func_args_and_kwargs(self) -> tuple[list[Any], dict[str, Any]]:
+        raise NotImplementedError
 
     @classmethod
     def format_prior_state(cls, state: str) -> str:
@@ -134,13 +172,7 @@ class PythonAPIAgent(PrivateAgent, ABC):
         if isinstance(result.final_output, FinalAnswer):
             return result.final_output.answer
         elif isinstance(result.final_output, APIExecutionPlan):
-            self.invoke_api(result.final_output)
-            return result.final_output.answer
-
-        if isinstance(result.final_output, self.final_answer_cls):
-            return result.final_output.answer
-        if isinstance(result.final_output, self.execution_plan_cls):
-            new_state = self.invoke_api(result.final_output)
+            new_state = await self.invoke_api(result.final_output)
             prior_states += '\n\n' + self.format_prior_state(new_state)
             if depth < max_depth:
                 return await self.answer_with_api(request, prior_states, depth + 1, max_depth)
@@ -186,7 +218,8 @@ def generate_python_api_doc(cls: type, whitelisted_members: list[str] | None = N
                     for param in sig.parameters.values()
                 ]
                 return_type = f" -> {get_type_name(sig.return_annotation)}"
-                line = f'    def {name}({", ".join(params)}){return_type}'
+                prefix = 'async def' if inspect.iscoroutinefunction(attr) else 'def'
+                line = f'    {prefix} {name}({", ".join(params)}){return_type}'
             else:  # If it's a variable
                 line = f'    {name}: {type(attr).__name__}'
             lines.append(line)
