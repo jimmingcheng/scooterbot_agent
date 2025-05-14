@@ -465,14 +465,14 @@ ws = ["websockets (>=15.0.1)"]
 
 [[package]]
 name = "openai"
-version = "1.76.0"
+version = "1.78.1"
 description = "The official Python library for the openai API"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "openai-1.76.0-py3-none-any.whl", hash = "sha256:a712b50e78cf78e6d7b2a8f69c4978243517c2c36999756673e07a14ce37dc0a"},
-    {file = "openai-1.76.0.tar.gz", hash = "sha256:fd2bfaf4608f48102d6b74f9e11c5ecaa058b60dad9c36e409c12477dfd91fb2"},
+    {file = "openai-1.78.1-py3-none-any.whl", hash = "sha256:7368bf147ca499804cc408fe68cdb6866a060f38dec961bbc97b04f9d917907e"},
+    {file = "openai-1.78.1.tar.gz", hash = "sha256:8b26b364531b100df1b961d03560042e5f5be11301d7d49a6cd1a2b9af824dca"},
 ]
 
 [package.dependencies]
@@ -492,14 +492,14 @@ voice-helpers = ["numpy (>=2.0.2)", "sounddevice (>=0.5.1)"]
 
 [[package]]
 name = "openai-agents"
-version = "0.0.13"
+version = "0.0.14"
 description = "OpenAI Agents SDK"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "openai_agents-0.0.13-py3-none-any.whl", hash = "sha256:e11910679e74803e8a4237ce52a21ee6f9ef0848d866e8198f5c4fb8c6310204"},
-    {file = "openai_agents-0.0.13.tar.gz", hash = "sha256:6b80315e75c06b5302c5f2adba2f9ea3845f94615daed4706bfb871740f561a5"},
+    {file = "openai_agents-0.0.14-py3-none-any.whl", hash = "sha256:43f88ae01787aaf699a5354997970cfeef12495286da55807ce0e4c1b2ebbb2c"},
+    {file = "openai_agents-0.0.14.tar.gz", hash = "sha256:884d6a1d4be7e77c2442b3ed058abe2c56231a6a05942fe87c6d8ecee72ca491"},
 ]
 
 [package.dependencies]
@@ -512,7 +512,7 @@ types-requests = ">=2.0,<3"
 typing-extensions = ">=4.12.2,<5"
 
 [package.extras]
-litellm = ["litellm (>=1.65.0,<2)"]
+litellm = ["litellm (>=1.67.4.post1,<2)"]
 viz = ["graphviz (>=0.17)"]
 voice = ["numpy (>=2.2.0,<3)", "websockets (>=15.0,<16)"]
 
@@ -1006,4 +1006,4 @@ standard = ["colorama (>=0.4)", "httptools (>=0.6.3)", "python-dotenv (>=0.13)",
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "a8dcd08f72998bc50540f58a3859b08945b67ae39c18312ce5b20ccde2231f6f"
+content-hash = "f338f2dbbb3b0301a61d01abf4369104f8a9103afb930348f562e881dd511204"
